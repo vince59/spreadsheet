@@ -111,10 +111,28 @@ fn test_getters() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+fn test_row_operation() -> Result<(), Box<dyn std::error::Error>> {
+    let mut t = Table::from_excel("C:/rust/spreadsheet/data/test.xlsx", None)?;
+    t.add_rows(2);
+    for (row, col, cell) in t.iter_cells_mut() {
+        cell.set_value(format!("new r{row}c{col}"));
+    }
+    t.remove_row(0);
+    t.insert_row(3);
+    for (row_idx, row) in t.iter_rows().enumerate() {
+        for (col_idx, cell) in row.iter_cells() {
+            println!("({row_idx}, {col_idx}) = {:?}", cell.value());
+        }
+    }
+    Ok(())
+}
+
 fn main()  -> Result<(), Box<dyn std::error::Error>> {
     test_write_to_excel();
     test_read_from_excel();
     test_iterators();
     test_getters();
+    test_row_operation();
     Ok(())
 }

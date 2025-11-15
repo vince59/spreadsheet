@@ -256,22 +256,6 @@ pub mod table {
             )
         }
 
-        /// Add `n` empty rows at the end of the table
-        pub fn add_rows(&mut self, n: usize) {
-            for _ in 0..n {
-                let mut cells = Vec::with_capacity(self.nb_cols);
-                for _ in 0..self.nb_cols {
-                    cells.push(Cell { value: None });
-                }
-                self.rows.push(Row { cells });
-            }
-        }
-
-        /// Add a single empty row
-        pub fn add_row(&mut self) {
-            self.add_rows(1);
-        }
-
         // ---------------------------------------------------------------------
         // Excel: reading
         // ---------------------------------------------------------------------
@@ -355,6 +339,97 @@ pub mod table {
             }
             book.remove_sheet(0);
             let _ = writer::xlsx::write(&book, path);
+            Ok(())
+        }
+
+        /// Insert an empty row at the given index (0..=rows()).
+        /// Returns Err if index is out of range.
+        pub fn insert_row(&mut self, row_idx: usize) -> Result<(), String> {
+            if row_idx > self.rows() {
+                return Err(format!(
+                    "row index {} out of range (0..={})",
+                    row_idx,
+                    self.rows()
+                ));
+            }
+
+            let mut cells = Vec::with_capacity(self.nb_cols);
+            for _ in 0..self.nb_cols {
+                cells.push(Cell { value: None });
+            }
+
+            self.rows.insert(row_idx, Row { cells });
+            Ok(())
+        }
+
+        /// Remove the row at the given index and return it.
+        pub fn remove_row(&mut self, row_idx: usize) -> Result<Row, String> {
+            if row_idx >= self.rows() {
+                return Err(format!(
+                    "row index {} out of range (0..{})",
+                    row_idx,
+                    self.rows().saturating_sub(1)
+                ));
+            }
+
+            Ok(self.rows.remove(row_idx))
+        }
+
+        /// Add one empty row at the end (alias around insert_row).
+        pub fn add_row(&mut self) {
+            // ignore the error because rows() is always a valid insertion index
+            let _ = self.insert_row(self.rows());
+        }
+
+        /// Add `n` empty rows at the end.
+        pub fn add_rows(&mut self, n: usize) {
+            for _ in 0..n {
+                self.add_row();
+            }
+        }
+
+        /// Insert an empty column at the given index (0..=cols()).
+        /// All rows grow by one cell. If there are no rows, only nb_cols is updated.
+        pub fn insert_col(&mut self, col_idx: usize) -> Result<(), String> {
+            if col_idx > self.nb_cols {
+                return Err(format!(
+                    "column index {} out of range (0..={})",
+                    col_idx,
+                    self.nb_cols
+                ));
+            }
+
+            for row in &mut self.rows {
+                row.cells.insert(col_idx, Cell { value: None });
+            }
+
+            self.nb_cols += 1;
+            Ok(())
+        }
+
+        /// Add an empty column at the end.
+        pub fn add_col(&mut self) {
+            let _ = self.insert_col(self.nb_cols);
+        }
+
+        /// Remove the column at the given index.
+        /// All rows shrink by one cell.
+        pub fn remove_col(&mut self, col_idx: usize) -> Result<(), String> {
+            if col_idx >= self.nb_cols {
+                return Err(format!(
+                    "column index {} out of range (0..{})",
+                    col_idx,
+                    self.nb_cols.saturating_sub(1)
+                ));
+            }
+
+            for row in &mut self.rows {
+                if !row.cells.is_empty() {
+                    row.cells.remove(col_idx);
+                }
+            }
+
+            self.nb_cols -= 1;
             Ok(())
         }
     }
