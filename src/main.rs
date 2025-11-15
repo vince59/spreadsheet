@@ -22,6 +22,9 @@ fn test_read_from_excel() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_iterators() -> Result<(), Box<dyn std::error::Error>> {
     let mut t = Table::from_excel("C:/rust/spreadsheet/data/test.xlsx", None)?;
+
+    //--------------------- Rows
+
     // iterate on all cells one by one
     for (row, col, cell) in t.iter_cells() {
         println!("R{}C{} -> {}", row, col, cell.value().as_ref().unwrap());
@@ -44,11 +47,32 @@ fn test_iterators() -> Result<(), Box<dyn std::error::Error>> {
             println!("({row_idx}, {col_idx}) = {:?}", cell.value());
         }
     }
+
+    // --------------------- Columns
+
+    // Iterate over all columns
+    for col in t.iter_cols() {
+        println!("Column index: {}", col.index());
+        // Iterate over cells of this column
+        for cell in col.iter_cells() {
+            println!("  value = {:?}", cell.value());
+        }
+    }
+
+    // Iterate over cells of a column in mutable mode
+    if let Some(mut iter) = t.col_cells_mut(1) {
+        for (row_idx, cell) in iter {
+            cell.set_value(format!("row {row_idx}"));
+            println!("  value = {:?}", cell.value());
+        }
+    }
+
     Ok(())
 }
 
 fn test_getters() -> Result<(), Box<dyn std::error::Error>> {
     let mut t = Table::from_excel("C:/rust/spreadsheet/data/test.xlsx", None)?;
+
     // Get a row
     if let Some(row) = t.get_row(2) {
         for (col_idx, cell) in row.iter_cells() {
@@ -63,12 +87,34 @@ fn test_getters() -> Result<(), Box<dyn std::error::Error>> {
             println!("(2, {col_idx}) = {:?}", cell.value());
         }
     }
+
+    // get a column
+    if let Some(col0) = t.get_col(0) {
+        println!("--- Column {} ---", col0.index());
+        for (row_idx, cell) in col0.iter_cells().enumerate() {
+            println!("row {row_idx} -> {:?}", cell.value());
+        }
+    }
+
+    // Write in a column
+    if let Some(mut iter) = t.col_cells_mut(0) {
+        for (row_idx, cell) in iter {
+            cell.set_value(format!("C0-R{row_idx}"));
+            println!("row {row_idx} -> {:?}", cell.value());
+        }
+    }
+
+    // get a cell
+    if let Some(cell) = t.get(1, 2) {
+        println!("Cell (1, 2) = {:?}", cell.value());
+    }
+
     Ok(())
 }
 fn main()  -> Result<(), Box<dyn std::error::Error>> {
-    //test_write_to_excel();
-    //test_read_from_excel();
-    //test_iterators();
+    test_write_to_excel();
+    test_read_from_excel();
+    test_iterators();
     test_getters();
     Ok(())
 }
