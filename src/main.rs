@@ -1,4 +1,4 @@
-use spreadsheet::table::{MatchMode, Table};
+use spreadsheet::table::{Table};
 
 // write to excel
 #[allow(dead_code)]
@@ -167,13 +167,20 @@ fn test_dupplicates() -> Result<(), Box<dyn std::error::Error>>  {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /*test_write_to_excel();
-    test_read_from_excel();
-    test_iterators();
-    test_getters();
-    test_row_operation();
-    test_dupplicates();*/
-    test_dupplicates();
+    //test_write_to_excel();
+    //test_read_from_excel();
+    //test_iterators();
+    //test_getters();
+    //test_row_operation();
+    //test_dupplicates();
+    //test_dupplicates();
+
+    let mut tables = Table::from_excel_all_sheets("C:/rust/spreadsheet/data/test3.xlsx")?;
+    let mut structures = tables.remove(0);
+    let mut services   = tables.remove(0);
+
+    structures.first_line_as_header();
+    services.first_line_as_header();
 
     Ok(())
 }

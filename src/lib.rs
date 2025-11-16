@@ -1,7 +1,7 @@
 pub mod table {
-    use calamine::{open_workbook_auto, Data, Reader};
+    use calamine::{open_workbook_auto, Data, Reader, Range};
     use std::{error::Error};
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{HashMap};
     use umya_spreadsheet::{new_file, writer};
 
     // -------------------------------------------------------------------------
@@ -39,6 +39,7 @@ pub mod table {
         rows: Vec<Row>,
         nb_cols: usize,
         name: String,
+        pub header: Option<Header>,
     }
 
     // immutable view on a column
@@ -48,6 +49,57 @@ pub mod table {
         index: usize,
     }
 
+    #[derive(Clone, Debug)]
+    pub struct Header {
+        titles: Vec<String>,
+    }
+
+    impl Header {
+        pub fn new(titles: Vec<String>) -> Self {
+            Header { titles }
+        }
+
+        pub fn len(&self) -> usize {
+            self.titles.len()
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.titles.is_empty()
+        }
+
+        /// Get the title at the given index.
+        pub fn get_title(&self, idx: usize) -> Option<&str> {
+            self.titles.get(idx).map(|s| s.as_str())
+        }
+
+        /// Immutable iterator over the titles: &str
+        pub fn iter(&self) -> impl Iterator<Item = &str> {
+            self.titles.iter().map(|s| s.as_str())
+        }
+
+        // Set the title at the given index (without change the number of columns)
+        pub fn set_title<S: Into<String>>(
+            &mut self,
+            idx: usize,
+            title: S,
+        ) -> Result<(), String> {
+            if idx >= self.titles.len() {
+                return Err(format!(
+                    "header column index {} out of range (0..={})",
+                    idx,
+                    self.titles.len().saturating_sub(1)
+                ));
+            }
+            self.titles[idx] = title.into();
+            Ok(())
+        }
+
+        pub fn ensure_len(&mut self, len: usize) {
+            if self.titles.len() < len {
+                self.titles.resize(len, String::new());
+            }
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Impl Cell
@@ -129,7 +181,7 @@ pub mod table {
                 }
                 rows.push(Row { cells });
             }
-            Self { rows, nb_cols, name }
+            Self { rows, nb_cols, name, header: None }
         }
 
         /// number of rows
@@ -281,23 +333,7 @@ pub mod table {
         // ---------------------------------------------------------------------
 
         /// Build a Table from an Excel file (first sheet or given sheet name)
-        pub fn from_excel(path: &str, sheet_name: Option<&str>) -> Result<Self, Box<dyn Error>> {
-            let mut workbook = open_workbook_auto(path)?;
-
-            let sheet_name = match sheet_name {
-                Some(name) => name.to_string(),
-                None => workbook
-                    .sheet_names()
-                    .get(0)
-                    .ok_or("The workbook has no sheet")?
-                    .clone(),
-            };
-
-            let range = match workbook.worksheet_range(&sheet_name) {
-                Ok(r) => r,
-                Err(e) => return Err(Box::new(e)),
-            };
-
+        fn from_range(range: &Range<Data>, sheet_name: String) -> Self {
             let mut rows = Vec::new();
             let mut max_cols = 0usize;
 
@@ -322,18 +358,60 @@ pub mod table {
                 rows.push(Row { cells });
             }
 
-            // Pad rows so the table is rectangular
+            // rendre le tableau rectangulaire
             for row in &mut rows {
                 while row.cells.len() < max_cols {
                     row.cells.push(Cell { value: None });
                 }
             }
 
-            Ok(Table {
+            Table {
                 rows,
                 nb_cols: max_cols,
                 name: sheet_name,
-            })
+                header: None,
+            }
+        }
+
+        /// Version actuelle : charge une seule feuille (par nom ou la première)
+        pub fn from_excel(path: &str, sheet_name: Option<&str>) -> Result<Self, Box<dyn Error>> {
+            let mut workbook = open_workbook_auto(path)?;
+
+            let sheet_name = match sheet_name {
+                Some(name) => name.to_string(),
+                None => workbook
+                    .sheet_names()
+                    .get(0)
+                    .ok_or("The workbook has no sheet")?
+                    .clone(),
+            };
+
+            let range = match workbook.worksheet_range(&sheet_name) {
+                Ok(r) => r,
+                Err(e) => return Err(Box::new(e)),
+            };
+
+            Ok(Table::from_range(&range, sheet_name))
+        }
+
+        /// Nouvelle fonction : charge **toutes** les feuilles et retourne un Vec<Table>
+        pub fn from_excel_all_sheets(path: &str) -> Result<Vec<Self>, Box<dyn Error>> {
+            let mut workbook = open_workbook_auto(path)?;
+            let sheet_names = workbook.sheet_names().clone(); // on clone la liste des noms
+
+            let mut tables = Vec::new();
+
+            for sheet_name in sheet_names {
+                let range = match workbook.worksheet_range(&sheet_name) {
+                    Ok(r) => r,
+                    Err(e) => return Err(Box::new(e)),
+                };
+
+                let table = Table::from_range(&range, sheet_name);
+                tables.push(table);
+            }
+
+            Ok(tables)
         }
 
         // ---------------------------------------------------------------------
@@ -440,6 +518,24 @@ pub mod table {
                 row.cells.insert(col_idx, Cell { value: None });
             }
 
+            if let Some(ref mut header) = self.header {
+                // numéro humain de la colonne (1-based)
+                let col_number = col_idx + 1;
+                let title = format!("Head_Col_{}", col_number);
+
+                // normalement header.titles.len() == nb_cols,
+                // mais on se protège au cas où.
+                if col_idx <= header.titles.len() {
+                    header.titles.insert(col_idx, title);
+                } else {
+                    // cas de désynchro : on pad jusqu'à col_idx
+                    while header.titles.len() < col_idx {
+                        header.titles.push(String::new());
+                    }
+                    header.titles.push(title);
+                }
+            }
+
             self.nb_cols += 1;
             Ok(())
         }
@@ -464,6 +560,12 @@ pub mod table {
             for row in &mut self.rows {
                 if !row.cells.is_empty() {
                     row.cells.remove(col_idx);
+                }
+            }
+
+            if let Some(ref mut header) = self.header {
+                if col_idx < header.titles.len() {
+                    header.titles.remove(col_idx);
                 }
             }
 
@@ -528,6 +630,7 @@ pub mod table {
             Ok(result)
         }
 
+        // return each row where the searched value is found
         pub fn find_duplicates_in_column(&self, col_idx: usize) -> Result<Vec<MatchResult>, String> {
             if col_idx >= self.get_nb_cols() {
                 return Err(format!(
@@ -551,5 +654,121 @@ pub mod table {
             }
             Ok(result)
         }
+
+        // remove the header from the data and create a real header
+        pub fn first_line_as_header(&mut self) -> Result<&Header, String> {
+            if self.header.is_some() {
+                return Err("Le header a déjà été extrait".into());
+            }
+
+            if self.rows.is_empty() {
+                return Err("Impossible d'extraire un header d'un tableau vide".into());
+            }
+
+            // On enlève la première ligne
+            let header_row = self.rows.remove(0);
+
+            // On convertit les cellules en titres (None => "")
+            let mut titles = Vec::with_capacity(self.nb_cols);
+            for cell in header_row.cells.into_iter().take(self.nb_cols) {
+                titles.push(cell.value.unwrap_or_default());
+            }
+
+            // S'il manque des colonnes, on complète avec ""
+            while titles.len() < self.nb_cols {
+                titles.push(String::new());
+            }
+
+            self.header = Some(Header { titles });
+
+            // On renvoie une référence sur le header pour usage immédiat
+            Ok(self.header.as_ref().unwrap())
+        }
+
+        // insert as first row with the header titles but keep the original header
+        pub fn insert_header_as_first_row(&mut self) -> Result<(), String> {
+            let header = match &self.header {
+                Some(h) => h,
+                None => return Err("Aucun header défini, impossible de le réinsérer".into()),
+            };
+
+            // Construire la ligne à partir des titres du header
+            let mut cells = Vec::with_capacity(self.nb_cols);
+
+            // On met autant de colonnes que `nb_cols`
+            for col_idx in 0..self.nb_cols {
+                let title = header
+                    .titles
+                    .get(col_idx)
+                    .cloned()
+                    .unwrap_or_default(); // si pas de titre, chaîne vide
+
+                cells.push(Cell {
+                    value: Some(title),
+                });
+            }
+
+            // On insère cette ligne en première position
+            self.rows.insert(0, Row { cells });
+
+            Ok(())
+        }
+
+        // move the header to the first row and remove the original header
+        pub fn move_header_to_first_row(&mut self) -> Result<(), String> {
+            let header = self
+                .header
+                .take()
+                .ok_or_else(|| "Aucun header défini, impossible de le réinsérer".to_string())?;
+
+            let mut cells = Vec::with_capacity(self.nb_cols);
+
+            for col_idx in 0..self.nb_cols {
+                let title = header
+                    .titles
+                    .get(col_idx)
+                    .cloned()
+                    .unwrap_or_default();
+
+                cells.push(Cell { value: Some(title) });
+            }
+
+            self.rows.insert(0, Row { cells });
+
+            Ok(())
+        }
+
+        pub fn get_header(&self) -> Result<&Header, String> {
+            self.header
+                .as_ref()
+                .ok_or_else(|| "No header defined".to_string())
+        }
+
+        pub fn set_header_title<S: Into<String>>(
+            &mut self,
+            col_idx: usize,
+            title: S,
+        ) -> Result<(), String> {
+            // Vérifier que la colonne existe dans le tableau
+            if col_idx >= self.nb_cols {
+                return Err(format!(
+                    "column index {} out of range (0..={})",
+                    col_idx,
+                    self.nb_cols.saturating_sub(1)
+                ));
+            }
+
+            let header = self
+                .header
+                .as_mut()
+                .ok_or_else(|| "No header defined".to_string())?;
+
+            // Assurer que le header a au moins nb_cols entrées
+            header.ensure_len(self.nb_cols);
+
+            // Maintenant on peut utiliser la méthode du Header
+            header.set_title(col_idx, title)
+        }
     }
+
 }
