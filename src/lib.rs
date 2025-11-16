@@ -1,7 +1,7 @@
 pub mod table {
-    use calamine::{open_workbook_auto, Data, Reader, Range};
-    use std::{error::Error};
-    use std::collections::{HashMap};
+    use calamine::{Data, Range, Reader, open_workbook_auto};
+    use std::collections::HashMap;
+    use std::error::Error;
     use umya_spreadsheet::{new_file, writer};
 
     // -------------------------------------------------------------------------
@@ -78,11 +78,7 @@ pub mod table {
         }
 
         // Set the title at the given index (without change the number of columns)
-        pub fn set_title<S: Into<String>>(
-            &mut self,
-            idx: usize,
-            title: S,
-        ) -> Result<(), String> {
+        pub fn set_title<S: Into<String>>(&mut self, idx: usize, title: S) -> Result<(), String> {
             if idx >= self.titles.len() {
                 return Err(format!(
                     "header column index {} out of range (0..={})",
@@ -98,6 +94,27 @@ pub mod table {
             if self.titles.len() < len {
                 self.titles.resize(len, String::new());
             }
+        }
+
+        pub fn find_col_index_by_title(&self, title: &str) -> Option<usize> {
+            self.titles.iter().position(|t| t == title)
+        }
+
+        /// Return a list of column indices corresponding to the given titles.
+        /// Returns an error if any title is not found.
+        pub fn find_cols_indices_by_titles(&self, titles: &[&str]) -> Result<Vec<usize>, String> {
+            let mut indices = Vec::with_capacity(titles.len());
+
+            for &title in titles {
+                match self.find_col_index_by_title(title) {
+                    Some(idx) => indices.push(idx),
+                    None => {
+                        return Err(format!("Column title '{}' not found in header", title));
+                    }
+                }
+            }
+
+            Ok(indices)
         }
     }
 
@@ -138,12 +155,12 @@ pub mod table {
         }
 
         /// Immutable iterator over the row cells: (column index, &Cell)
-        pub fn iter_cells(&self) -> impl Iterator<Item=(usize, &Cell)> {
+        pub fn iter_cells(&self) -> impl Iterator<Item = (usize, &Cell)> {
             self.cells.iter().enumerate()
         }
 
         /// Mutable iterator over the row cells: (column index, &mut Cell)
-        pub fn iter_cells_mut(&mut self) -> impl Iterator<Item=(usize, &mut Cell)> {
+        pub fn iter_cells_mut(&mut self) -> impl Iterator<Item = (usize, &mut Cell)> {
             self.cells.iter_mut().enumerate()
         }
     }
@@ -158,7 +175,7 @@ pub mod table {
         }
 
         /// Immutable iterator over the cells of this column
-        pub fn iter_cells(&'a self) -> impl Iterator<Item=&'a Cell> + 'a {
+        pub fn iter_cells(&'a self) -> impl Iterator<Item = &'a Cell> + 'a {
             self.table
                 .rows
                 .iter()
@@ -181,7 +198,12 @@ pub mod table {
                 }
                 rows.push(Row { cells });
             }
-            Self { rows, nb_cols, name, header: None }
+            Self {
+                rows,
+                nb_cols,
+                name,
+                header: None,
+            }
         }
 
         /// number of rows
@@ -239,43 +261,37 @@ pub mod table {
         }
 
         /// Immutable iterator over rows
-        pub fn iter_rows(&self) -> impl Iterator<Item=&Row> {
+        pub fn iter_rows(&self) -> impl Iterator<Item = &Row> {
             self.rows.iter()
         }
 
         /// Mutable iterator over rows
-        pub fn iter_rows_mut(&mut self) -> impl Iterator<Item=&mut Row> {
+        pub fn iter_rows_mut(&mut self) -> impl Iterator<Item = &mut Row> {
             self.rows.iter_mut()
         }
 
         /// Immutable iterator over all cells: (row index, column index, &Cell)
-        pub fn iter_cells(&self) -> impl Iterator<Item=(usize, usize, &Cell)> {
-            self.rows
-                .iter()
-                .enumerate()
-                .flat_map(|(row_idx, row)| {
-                    row.cells
-                        .iter()
-                        .enumerate()
-                        .map(move |(col_idx, cell)| (row_idx, col_idx, cell))
-                })
+        pub fn iter_cells(&self) -> impl Iterator<Item = (usize, usize, &Cell)> {
+            self.rows.iter().enumerate().flat_map(|(row_idx, row)| {
+                row.cells
+                    .iter()
+                    .enumerate()
+                    .map(move |(col_idx, cell)| (row_idx, col_idx, cell))
+            })
         }
 
         /// Mutable iterator over all cells: (row index, column index, &mut Cell)
-        pub fn iter_cells_mut(&mut self) -> impl Iterator<Item=(usize, usize, &mut Cell)> {
-            self.rows
-                .iter_mut()
-                .enumerate()
-                .flat_map(|(row_idx, row)| {
-                    row.cells
-                        .iter_mut()
-                        .enumerate()
-                        .map(move |(col_idx, cell)| (row_idx, col_idx, cell))
-                })
+        pub fn iter_cells_mut(&mut self) -> impl Iterator<Item = (usize, usize, &mut Cell)> {
+            self.rows.iter_mut().enumerate().flat_map(|(row_idx, row)| {
+                row.cells
+                    .iter_mut()
+                    .enumerate()
+                    .map(move |(col_idx, cell)| (row_idx, col_idx, cell))
+            })
         }
 
         /// Immutable iterator over columns (as views)
-        pub fn iter_cols(&self) -> impl Iterator<Item=Col<'_>> {
+        pub fn iter_cols(&self) -> impl Iterator<Item = Col<'_>> {
             (0..self.nb_cols).map(move |idx| Col {
                 table: self,
                 index: idx,
@@ -295,10 +311,7 @@ pub mod table {
         }
 
         /// Immutable iterator over the cells of a column: (row index, &Cell)
-        pub fn col_cells(
-            &self,
-            col_idx: usize,
-        ) -> Option<impl Iterator<Item=(usize, &Cell)>> {
+        pub fn col_cells(&self, col_idx: usize) -> Option<impl Iterator<Item = (usize, &Cell)>> {
             if col_idx >= self.nb_cols {
                 return None;
             }
@@ -315,7 +328,7 @@ pub mod table {
         pub fn col_cells_mut(
             &mut self,
             col_idx: usize,
-        ) -> Option<impl Iterator<Item=(usize, &mut Cell)>> {
+        ) -> Option<impl Iterator<Item = (usize, &mut Cell)>> {
             if col_idx >= self.nb_cols {
                 return None;
             }
@@ -430,7 +443,10 @@ pub mod table {
                 for (r, row) in sheet.iter_rows().enumerate() {
                     for (c, cell) in row.cells.iter().enumerate() {
                         if let Some(value) = &cell.value {
-                            book.get_sheet_mut(&(i + 1)).unwrap().get_cell_mut((c as u32 + 1, r as u32 + 1)).set_value_string(value);
+                            book.get_sheet_mut(&(i + 1))
+                                .unwrap()
+                                .get_cell_mut((c as u32 + 1, r as u32 + 1))
+                                .set_value_string(value);
                         }
                     }
                 }
@@ -448,7 +464,10 @@ pub mod table {
             for (r, row) in self.iter_rows().enumerate() {
                 for (c, cell) in row.cells.iter().enumerate() {
                     if let Some(value) = &cell.value {
-                        book.get_sheet_mut(&(1)).unwrap().get_cell_mut((c as u32 + 1, r as u32 + 1)).set_value_string(value);
+                        book.get_sheet_mut(&(1))
+                            .unwrap()
+                            .get_cell_mut((c as u32 + 1, r as u32 + 1))
+                            .set_value_string(value);
                     }
                 }
             }
@@ -509,8 +528,7 @@ pub mod table {
             if col_idx > self.nb_cols {
                 return Err(format!(
                     "column index {} out of range (0..={})",
-                    col_idx,
-                    self.nb_cols
+                    col_idx, self.nb_cols
                 ));
             }
 
@@ -623,7 +641,10 @@ pub mod table {
 
                 if found {
                     occurrence += 1;
-                    result.push(MatchResult{row_idx, occurrence});
+                    result.push(MatchResult {
+                        row_idx,
+                        occurrence,
+                    });
                 }
             }
 
@@ -631,7 +652,10 @@ pub mod table {
         }
 
         // return each row where the searched value is found
-        pub fn find_duplicates_in_column(&self, col_idx: usize) -> Result<Vec<MatchResult>, String> {
+        pub fn find_duplicates_in_column(
+            &self,
+            col_idx: usize,
+        ) -> Result<Vec<MatchResult>, String> {
             if col_idx >= self.get_nb_cols() {
                 return Err(format!(
                     "Indice de colonne invalide: {} (max = {})",
@@ -647,9 +671,15 @@ pub mod table {
                 let count = counts.entry(value).or_insert(0);
                 *count += 1;
                 if *count >= 2 {
-                    result.push(MatchResult{row_idx, occurrence:*count});
+                    result.push(MatchResult {
+                        row_idx,
+                        occurrence: *count,
+                    });
                 } else {
-                    result.push(MatchResult{row_idx, occurrence:*count});
+                    result.push(MatchResult {
+                        row_idx,
+                        occurrence: *count,
+                    });
                 }
             }
             Ok(result)
@@ -697,15 +727,9 @@ pub mod table {
 
             // On met autant de colonnes que `nb_cols`
             for col_idx in 0..self.nb_cols {
-                let title = header
-                    .titles
-                    .get(col_idx)
-                    .cloned()
-                    .unwrap_or_default(); // si pas de titre, chaîne vide
+                let title = header.titles.get(col_idx).cloned().unwrap_or_default(); // si pas de titre, chaîne vide
 
-                cells.push(Cell {
-                    value: Some(title),
-                });
+                cells.push(Cell { value: Some(title) });
             }
 
             // On insère cette ligne en première position
@@ -724,11 +748,7 @@ pub mod table {
             let mut cells = Vec::with_capacity(self.nb_cols);
 
             for col_idx in 0..self.nb_cols {
-                let title = header
-                    .titles
-                    .get(col_idx)
-                    .cloned()
-                    .unwrap_or_default();
+                let title = header.titles.get(col_idx).cloned().unwrap_or_default();
 
                 cells.push(Cell { value: Some(title) });
             }
@@ -738,12 +758,14 @@ pub mod table {
             Ok(())
         }
 
+        // return the header
         pub fn get_header(&self) -> Result<&Header, String> {
             self.header
                 .as_ref()
                 .ok_or_else(|| "No header defined".to_string())
         }
 
+        // set the title of a column in the header
         pub fn set_header_title<S: Into<String>>(
             &mut self,
             col_idx: usize,
@@ -769,6 +791,120 @@ pub mod table {
             // Maintenant on peut utiliser la méthode du Header
             header.set_title(col_idx, title)
         }
-    }
 
+        // return the index of the column with the given title
+        pub fn get_col_index_by_title(&self, title: &str) -> Result<usize, String> {
+            let header = self
+                .header
+                .as_ref()
+                .ok_or_else(|| "No header defined".to_string())?;
+
+            header
+                .find_col_index_by_title(title)
+                .ok_or_else(|| format!("Column title '{}' not found in header", title))
+        }
+
+        // remove the columns with the given indices
+        pub fn remove_cols(&mut self, col_indices: &[usize]) -> Result<(), String> {
+            if col_indices.is_empty() {
+                return Ok(());
+            }
+
+            // copy the indices into a Vec to sort them
+            let mut idxs: Vec<usize> = col_indices.to_vec();
+
+            // sort and remove duplicates
+            idxs.sort_unstable();
+            idxs.dedup();
+
+            // we remove the columns in reverse order
+            for &idx in idxs.iter().rev() {
+                self.remove_col(idx)?;
+            }
+
+            Ok(())
+        }
+
+        /// Keeps only the columns whose indices are given in `col_indices`.
+        /// All other columns are removed.
+        ///
+        /// - `col_indices` can be in any order.
+        /// - Duplicates are ignored.
+        /// - Returns an error if any index is out of bounds.
+        pub fn keep_cols(&mut self, col_indices: &[usize]) -> Result<(), String> {
+            // If we don't want to keep any column: remove all existing columns
+            if col_indices.is_empty() {
+                let to_remove: Vec<usize> = (0..self.nb_cols).collect();
+                return self.remove_cols(&to_remove);
+            }
+
+            // Copy / normalize the indices to keep
+            let mut keep: Vec<usize> = col_indices.to_vec();
+            keep.sort_unstable();
+            keep.dedup();
+
+            // Validate indices (since they are sorted, we only need to check the largest)
+            if let Some(&max_idx) = keep.last() {
+                if max_idx >= self.nb_cols {
+                    return Err(format!(
+                        "column index {} out of range (0..={})",
+                        max_idx,
+                        self.nb_cols.saturating_sub(1)
+                    ));
+                }
+            }
+
+            // Build the list of columns to remove = complement of `keep`
+            let mut to_remove = Vec::new();
+            let mut it_keep = keep.iter().copied();
+            let mut current_keep = it_keep.next();
+
+            for idx in 0..self.nb_cols {
+                if Some(idx) == current_keep {
+                    // This column is in the "keep" list, so we skip it
+                    current_keep = it_keep.next();
+                } else {
+                    // This column is not in the "keep" list, so we will remove it
+                    to_remove.push(idx);
+                }
+            }
+
+            // Reuse existing logic that already updates rows + header correctly
+            self.remove_cols(&to_remove)
+        }
+
+        /// Return the indices of the columns whose titles are given in `titles`.
+        /// Fails if no header is defined or if any title is not found.
+        pub fn get_cols_indices_by_titles(&self, titles: &[&str]) -> Result<Vec<usize>, String> {
+            let header = self
+                .header
+                .as_ref()
+                .ok_or_else(|| "No header defined".to_string())?;
+
+            header.find_cols_indices_by_titles(titles)
+        }
+
+        /// Create a new empty table from a list of column titles.
+        pub fn from_column_titles<S, N>(titles: &[S], name: N) -> Self
+        where
+            S: AsRef<str>,
+            N: Into<String>,
+        {
+            // Convert the slice of titles into owned Strings
+            let titles_vec: Vec<String> = titles
+                .iter()
+                .map(|t| t.as_ref().to_string())
+                .collect();
+
+            let header = Header::new(titles_vec);
+            let nb_cols = header.len();
+
+            Table {
+                header: Some(header),
+                rows: Vec::new(),     // no data rows yet
+                nb_cols,
+                name: name.into(),
+            }
+        }
+    }
 }

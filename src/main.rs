@@ -1,4 +1,4 @@
-use spreadsheet::table::{Table};
+use spreadsheet::table::Table;
 
 // write to excel
 #[allow(dead_code)]
@@ -133,7 +133,7 @@ fn test_row_operation() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[allow(dead_code)]
-fn test_dupplicates() -> Result<(), Box<dyn std::error::Error>>  {
+fn test_dupplicates() -> Result<(), Box<dyn std::error::Error>> {
     let mut t = Table::from_excel("C:/rust/spreadsheet/data/test2.xlsx", None)?;
     let col_idx = t.add_col()?;
 
@@ -177,10 +177,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut tables = Table::from_excel_all_sheets("C:/rust/spreadsheet/data/test3.xlsx")?;
     let mut structures = tables.remove(0);
-    let mut services   = tables.remove(0);
+    let mut services = tables.remove(0);
 
-    structures.first_line_as_header();
-    services.first_line_as_header();
-
+    structures.first_line_as_header()?;
+    services.first_line_as_header()?;
+    let mut structure_header =vec! [
+        "Identifiant",
+        "RaisonSociale",
+        "GestionEngagement",
+        "GestionService",
+        "Adresse",
+        "ComplementAdresse1",
+        "ComplementAdresse2",
+        "CodePostal",
+        "Ville",
+        "NumTelephone",
+        "Courriel",
+    ];
+    let cols = structures.get_cols_indices_by_titles(&structure_header)?;
+    structures.keep_cols(&cols)?;
+    let cols = services.get_cols_indices_by_titles(&[
+        "Identifiant",
+        "RaisonSociale",
+        "Code",
+        "Nom",
+        "Adresse",
+        "ComplementAdresse1",
+        "ComplementAdresse2",
+        "CodePostal",
+        "Ville",
+        "NumTelephone",
+        "Courriel",
+    ])?;
+    structure_header.insert(3,"Code chorus");
+    let customers = Table::from_column_titles(&structure_header, "Liste pour Sage");
+    
     Ok(())
 }
