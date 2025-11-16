@@ -1,7 +1,8 @@
-use spreadsheet::table::Table;
+use spreadsheet::table::{MatchMode, Table};
 
 // write to excel
-fn test_write_to_excel() -> Result<(), Box<dyn std::error::Error>>{
+#[allow(dead_code)]
+fn test_write_to_excel() -> Result<(), Box<dyn std::error::Error>> {
     let mut sheets = Vec::new();
     for i in 0..2 {
         let mut t = Table::new(3, 4, format!("Tableau {}", i));
@@ -14,12 +15,14 @@ fn test_write_to_excel() -> Result<(), Box<dyn std::error::Error>>{
     Table::write_tables_to_excel("C:/rust/spreadsheet/data/test.xlsx", sheets)
 }
 
+#[allow(dead_code)]
 fn test_read_from_excel() -> Result<(), Box<dyn std::error::Error>> {
     let t = Table::from_excel("C:/rust/spreadsheet/data/test.xlsx", None)?;
     println!("{:?}", t);
     Ok(())
 }
 
+#[allow(dead_code)]
 fn test_iterators() -> Result<(), Box<dyn std::error::Error>> {
     let mut t = Table::from_excel("C:/rust/spreadsheet/data/test.xlsx", None)?;
 
@@ -60,7 +63,7 @@ fn test_iterators() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Iterate over cells of a column in mutable mode
-    if let Some(mut iter) = t.col_cells_mut(1) {
+    if let Some(iter) = t.col_cells_mut(1) {
         for (row_idx, cell) in iter {
             cell.set_value(format!("row {row_idx}"));
             println!("  value = {:?}", cell.value());
@@ -70,6 +73,7 @@ fn test_iterators() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn test_getters() -> Result<(), Box<dyn std::error::Error>> {
     let mut t = Table::from_excel("C:/rust/spreadsheet/data/test.xlsx", None)?;
 
@@ -97,7 +101,7 @@ fn test_getters() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Write in a column
-    if let Some(mut iter) = t.col_cells_mut(0) {
+    if let Some(iter) = t.col_cells_mut(0) {
         for (row_idx, cell) in iter {
             cell.set_value(format!("C0-R{row_idx}"));
             println!("row {row_idx} -> {:?}", cell.value());
@@ -111,15 +115,15 @@ fn test_getters() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
+#[allow(dead_code)]
 fn test_row_operation() -> Result<(), Box<dyn std::error::Error>> {
     let mut t = Table::from_excel("C:/rust/spreadsheet/data/test.xlsx", None)?;
     t.add_rows(2);
     for (row, col, cell) in t.iter_cells_mut() {
         cell.set_value(format!("new r{row}c{col}"));
     }
-    t.remove_row(0);
-    t.insert_row(3);
+    t.remove_row(0)?;
+    t.insert_row(3)?;
     for (row_idx, row) in t.iter_rows().enumerate() {
         for (col_idx, cell) in row.iter_cells() {
             println!("({row_idx}, {col_idx}) = {:?}", cell.value());
@@ -128,11 +132,48 @@ fn test_row_operation() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn main()  -> Result<(), Box<dyn std::error::Error>> {
-    test_write_to_excel();
+#[allow(dead_code)]
+fn test_dupplicates() -> Result<(), Box<dyn std::error::Error>>  {
+    let mut t = Table::from_excel("C:/rust/spreadsheet/data/test2.xlsx", None)?;
+    let col_idx = t.add_col()?;
+
+    for row_idx in 0..t.get_nb_rows() {
+        let value = if row_idx == 0 {
+            "Key".to_string()
+        } else {
+            let v1 = t.get_cell_text(row_idx, col_idx - 3);
+            let v2 = t.get_cell_text(row_idx, col_idx - 2);
+            format!("{}_{}", v1, v2)
+        };
+
+        if let Some(cell) = t.get_mut(row_idx, col_idx) {
+            cell.set_value(value);
+        }
+    }
+    let dupplicates = t.find_duplicates_in_column(col_idx)?;
+    let col_idx = t.add_col()?;
+    dupplicates.iter().for_each(|dupp| {
+        if let Some(cell) = t.get_mut(dupp.row_idx, col_idx) {
+            if dupp.row_idx == 0 {
+                cell.set_value("Nb doublons".to_string());
+            } else {
+                cell.set_value(dupp.occurrence.to_string());
+            }
+        }
+    });
+
+    t.to_excel("C:/rust/spreadsheet/data/result.xlsx")?;
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /*test_write_to_excel();
     test_read_from_excel();
     test_iterators();
     test_getters();
     test_row_operation();
+    test_dupplicates();*/
+    test_dupplicates();
+
     Ok(())
 }
