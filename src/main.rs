@@ -1,4 +1,4 @@
-use spreadsheet::table::Table;
+use spreadsheet::table::{Table, Value};
 
 // write to excel
 #[allow(dead_code)]
@@ -175,7 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //test_dupplicates();
     //test_dupplicates();
 
-    let mut tables = Table::from_excel_all_sheets("C:/rust/spreadsheet/data/test3.xlsx")?;
+    let mut tables = Table::from_excel_all_sheets("C:/rust/spreadsheet/data/annuaire.xlsx")?;
     let mut structures = tables.remove(0);
     let mut services = tables.remove(0);
 
@@ -196,21 +196,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
     let cols = structures.get_cols_indices_by_titles(&structure_header)?;
     structures.keep_cols(&cols)?;
-    let cols = services.get_cols_indices_by_titles(&[
-        "Identifiant",
-        "RaisonSociale",
-        "Code",
-        "Nom",
-        "Adresse",
-        "ComplementAdresse1",
-        "ComplementAdresse2",
-        "CodePostal",
-        "Ville",
-        "NumTelephone",
-        "Courriel",
-    ])?;
-    structure_header.insert(3,"Code chorus");
-    let customers = Table::from_column_titles(&structure_header, "Liste pour Sage");
-    
+    structure_header.push("Code Chorus");
+    structure_header.push("Type");
+    structure_header.push("Nom du service");
+    let mut customers = Table::from_column_titles(&structure_header, "Liste pour Sage");
+
+    for (_, row) in structures.iter_rows().enumerate() {
+        let i = customers.add_row();
+        // Initialize with a dummy value, will be overwritten if col_idx==1 exists
+        let mut customer_code = &Value::default();
+        for (col_idx, cell) in row.iter_cells() {
+            customers.set_cell_value(i,col_idx,cell.value().clone())?;
+            if col_idx==1 {
+                customer_code=cell.value();
+            }
+        }
+        customers.set_cell_value_by_title(i,"Type",Some("Maison mère".to_string()))?;
+        let srv =services.find_rows_matching_value(0, customer_code)?;
+        for row_idx in srv {
+            let srv_row = services.get_row(row_idx).unwrap();
+            let i=customers.add_row();
+            for (col_idx, cell) in srv_row.iter_cells() {
+                let col = match col_idx {
+                    2 => 11,
+                    3 => 13,
+                    _ => col_idx,
+                };
+                customers.set_cell_value(i,col,cell.value().clone())?;
+            }
+            customers.set_cell_value_by_title(i,"Type",Some("Filiale".to_string()))?;
+        }
+    }
+
+    customers.insert_header_as_first_row()?;
+    customers.to_excel("C:/rust/spreadsheet/data/customers.xlsx")?;
     Ok(())
 }

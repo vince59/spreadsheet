@@ -138,6 +138,10 @@ pub mod table {
         pub fn clear(&mut self) {
             self.value = None;
         }
+        
+        pub fn get_value_as_str (&self) -> String {
+            self.value.clone().unwrap_or_default()
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -510,9 +514,10 @@ pub mod table {
         }
 
         /// Add one empty row at the end (alias around insert_row).
-        pub fn add_row(&mut self) {
+        pub fn add_row(&mut self) -> usize {
             // ignore the error because rows() is always a valid insertion index
-            let _ = self.insert_row(self.get_nb_rows());
+            let _ =self.insert_row(self.get_nb_rows());
+            self.get_nb_rows()-1
         }
 
         /// Add `n` empty rows at the end.
@@ -905,6 +910,85 @@ pub mod table {
                 nb_cols,
                 name: name.into(),
             }
+        }
+
+        pub fn set_cell_value(
+            &mut self,
+            row_idx: usize,
+            col_idx: usize,
+            value: Value,
+        ) -> Result<(), String> {
+            // check row index
+            if row_idx >= self.rows.len() {
+                return Err(format!(
+                    "row index {} out of range (0..={})",
+                    row_idx,
+                    self.rows.len().saturating_sub(1)
+                ));
+            }
+
+            // check column index
+            if col_idx >= self.nb_cols {
+                return Err(format!(
+                    "column index {} out of range (0..={})",
+                    col_idx,
+                    self.nb_cols.saturating_sub(1)
+                ));
+            }
+
+            // set the value
+            self.rows[row_idx].cells[col_idx].value = value;
+            Ok(())
+        }
+
+        /// Return the list of row indices where the value in column `col_idx`
+        /// matches `needle` exactly (using Value instead of &str).
+        ///
+        /// - Returns an error if `col_idx` is out of range.
+        pub fn find_rows_matching_value(
+            &self,
+            col_idx: usize,
+            needle: &Value,
+        ) -> Result<Vec<usize>, String> {
+            // Check column index
+            if col_idx >= self.nb_cols {
+                return Err(format!(
+                    "column index {} out of range (0..={})",
+                    col_idx,
+                    self.nb_cols.saturating_sub(1)
+                ));
+            }
+
+            let mut matches = Vec::new();
+
+            for (row_idx, row) in self.rows.iter().enumerate() {
+                // Directly compare the cell's Value with the needle
+                if let Some(cell) = row.cells.get(col_idx) {
+                    if &cell.value == needle {
+                        matches.push(row_idx);
+                    }
+                }
+            }
+
+            Ok(matches)
+        }
+        /// Set the value of a cell by row index and column title.
+        ///
+        /// Errors:
+        /// - if there is no header
+        /// - if the column title is not found in the header
+        /// - if the row index is out of range
+        pub fn set_cell_value_by_title(
+            &mut self,
+            row_idx: usize,
+            col_title: &str,
+            value: Value,
+        ) -> Result<(), String> {
+            // 1) Find the column index from the header
+            let col_idx = self.get_col_index_by_title(col_title)?;
+
+            // 2) Delegate to the low-level setter using indices
+            self.set_cell_value(row_idx, col_idx, value)
         }
     }
 }
